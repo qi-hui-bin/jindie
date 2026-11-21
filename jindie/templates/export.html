@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "components.html" import steps %}
+{% block title %}导出 #{{ export.id }} · 凭证工作台{% endblock %}
+{% block breadcrumb %}历史批次 <span class="crumb-sep">/</span> 导出 #{{ export.id }}{% endblock %}
+{% block content %}
+{{ steps(3) }}
+<section class="hero">
+  <p class="eyebrow">凭证处理 · 第 3 步</p><h1>导出 #{{ export.id }}</h1>
+  <p>{{ book.label }} · {{ export.period }} · 凭证字 {{ export.voucher_word }} · {{ items|length }} 张</p>
+</section>
+<div class="page-actions"><a class="button" href="{{ url_for('download', book_id=book.id, export_id=export.id) }}">{{ icon("download", 18) }} {{ "下载精斗云导入文件" if export.has_reconciliation else "下载已保存的原 Excel" }}</a>
+{% if export.has_reconciliation %}<a class="button" href="{{ url_for('download', book_id=book.id, export_id=export.id, file='reconciliation') }}">下载七页核对底稿</a>{% endif %}
+<a class="button button-secondary" href="{{ url_for('batch_page', book_id=book.id, batch_id=export.batch_id) }}">返回批次 #{{ export.batch_id }}</a></div>
+<p class="muted">请在精斗云手动导入并核对结果。标记「已确认导入」后不能在此页面撤回。</p>
+{% if has_retries %}
+<p class="warning">原文件包含已进入重导的旧凭证。原文件仅供查阅，不要整批重新导入。</p>
+{% endif %}
+{% if exclusions %}<details class="card disclosure"><summary>本次未包含 {{ exclusions|length }} 笔流水</summary>
+<ul>{% for item in exclusions %}<li>第 {{ item.row_number }} 行：{% for issue in item.issues %}{{ issue.message }}{% endfor %}</li>{% endfor %}</ul>
+</details>{% endif %}
+<div class="stack">
+{% for item, voucher in items %}
+<section class="card">
+  <div class="panel-heading"><span class="icon-tile">{{ icon("ledger", 18) }}</span><h2>凭证号 {{ item.number }}</h2>
+    <span class="pill pill-{{ item.import_status }}">{{ import_labels[item.import_status] }}</span></div>
+  <p>来源：「{{ voucher.sources[0].sheet }}」{% for source in voucher.sources %}第 {{ source.row_number }} 行{% if not loop.last %}、{% endif %}{% endfor %} · {{ voucher.entries|length }} 条分录</p>
+  {% if item.import_note %}<p>备注：{{ item.import_note }}</p>{% endif %}
+  {% if item.original_export_id %}<p>修订自 <a href="{{ url_for('export_page', book_id=book.id, export_id=item.original_export_id) }}">导出 #{{ item.original_export_id }}</a> · 原凭证号 {{ item.original_number }}</p>{% endif %}
+  {% if item.replacement_export_id %}
+    <p>替换文件：<a href="{{ url_for('export_page', book_id=book.id, export_id=item.replacement_export_id) }}">导出 #{{ item.replacement_export_id }}</a></p>
+  {% elif item.retry_draft_id %}
+    <p><a href="{{ url_for('batch_page', book_id=book.id, batch_id=export.batch_id, focus=item.retry_draft_id, _anchor='draft-' ~ item.retry_draft_id) }}">继续复核此张修订凭证</a></p>
+  {% elif item.import_status != "imported" %}
+  <form method="post" class="fields" action="{{ url_for('import_result', book_id=book.id, export_id=export.id, number=item.number) }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <label>登记状态<select name="status" required>
+      <option value="">请选择</option>
+      {% for state in ("imported", "failed", "not_imported") %}<option value="{{ state }}">{{ import_labels[state] }}</option>{% endfor %}
+    </select></label>
+    <label>原因（失败或未入账必填）<input name="note" maxlength="500"></label>
+    <button type="submit">保存导入结果</button>
+  </form>
+  {% if item.import_status == "not_imported" %}
+  <form method="post" action="{{ url_for('start_retry', book_id=book.id, export_id=export.id, number=item.number) }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <label class="check"><input type="checkbox" name="confirm" value="yes" required>已核实精斗云未入账，不再使用该张原凭证</label>
+    <button>发起单张修订重导</button>
+  </form>
+  {% endif %}
+  {% endif %}
+</section>
+{% endfor %}
+</div>
+{% endblock %}

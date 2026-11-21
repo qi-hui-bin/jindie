@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{{ "更新账套配置" if book else "新增账套" }} · 凭证工作台{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('configuration') }}">配置</a> / {{ "更新账套配置" if book else "新增账套" }}{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <p class="eyebrow">本地账套</p><h1>{{ "更新账套配置" if book else "新增账套" }}</h1>
+  {% if book %}
+    <p>账套：{{ book.label }}（{{ book.id }}） · 当前 v{{ book.version }}。发布后仅新批次使用新版本；旧批次仍使用原版本，历史导出不变。</p>
+  {% else %}
+    <p>仅在本工具创建配置，不会向精斗云新建账套或同步数据。本页不会修改已有账套。</p>
+  {% endif %}
+</div>
+<section class="card">
+  <h2>{{ "更新主数据和凭证模板" if book else "准备两个 Excel 文件" }}</h2>
+  <ol>
+    {% if book %}
+    <li><a href="{{ url_for('download_book_workbook', book_id=book.id) }}">下载当前版本主数据</a>。文件包含完整账号，请妥善保管。修改后上传完整工作簿，不是仅包含变更行的工作簿。</li>
+    <li>不能把已有账户标识改绑到另一完整账号。停用账户时从「银行账户」表移除该行；已有流水和凭证不会删除。</li>
+    {% else %}
+    <li><a href="{{ url_for('download_setup_workbook') }}">下载账套主数据填写表</a>，将目标账套的科目、辅助核算和银行账户填入对应工作表。不要改表头；账号及编码按文本填写，保留前导零。</li>
+    {% endif %}
+    <li>「必填辅助类别」用顿号分隔；「数量核算」填「是」或「否」。「流水格式」填「自动」「中行」「建行」或「兴业」。{% if book %}保留「自定义」可沿用该账户此前发布的列映射。{% endif %}「日期口径」可留空，或填「交易日」「记账日」。</li>
+    <li>只使用同一精斗云账套的空白凭证导入模板，不能用含历史凭证的文件。{% if book %}不上传新模板时沿用当前模板。{% endif %}文件须为 .xlsx，单个不超过 10 MiB。</li>
+  </ol>
+  {% if not book %}<p>新账套不会自动继承其他账套的规则。当前可在流水复核页逐笔手工制证。</p>{% endif %}
+</section>
+<section class="card">
+  {% if error %}<p class="warning" role="alert">{{ error }} 请重新选择上传文件。</p>{% endif %}
+  <form method="post" enctype="multipart/form-data" action="{{ url_for('edit_book', book_id=book.id) if book else url_for('new_book') }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    {% if book %}<input type="hidden" name="version" value="{{ book.version }}">{% endif %}
+    <div class="form-grid">
+      {% if not book %}
+      <label>账套标识<input name="book_id" value="{{ values.book_id }}" maxlength="40" pattern="[A-Za-z0-9][A-Za-z0-9_\-]{0,39}" required><small>例如 wenshuo，不超过 40 位。</small></label>
+      {% endif %}
+      <label>账套名称<input name="label" value="{{ values.label }}" maxlength="100" required></label>
+      <label>凭证字<input name="word" value="{{ values.word }}" maxlength="20" required></label>
+      <label>人民币币别代码<input name="currency_code" value="{{ values.currency_code }}" maxlength="20" required></label>
+      <label>账套主数据填写表<input type="file" name="master" accept=".xlsx" required></label>
+      <label>精斗云空白凭证模板{% if book %}（不换则留空）{% endif %}<input type="file" name="template" accept=".xlsx"{% if not book %} required{% endif %}></label>
+    </div>
+    <label class="check"><input type="checkbox" name="text_number" value="yes"{% if values.text_number == "yes" %} checked{% endif %}>凭证号按文本导出</label>
+    <label class="check"><input type="checkbox" name="verified" value="yes" required>我已核对目标账套、科目和辅助编码、银行科目、空白模板和导出设置。</label>
+    <div class="card-actions"><button>{{ "核验文件并发布新版本" if book else "核验文件并创建账套" }}</button></div>
+  </form>
+</section>
+{% endblock %}

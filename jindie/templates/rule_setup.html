@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}自动制证规则 · 凭证工作台{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('configuration') }}">配置</a> / 自动制证规则{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <p class="eyebrow">本地账套</p><h1>自动制证规则</h1>
+  <p>{{ book.label }} · 当前配置 v{{ book.version }}。发布仅作用于新批次，生成的凭证仍须人工复核。</p>
+</div>
+{% if rules %}
+<section class="card">
+  <h2>已发布规则</h2>
+  <ul>{% for rule in rules %}
+    <li>
+      <a href="{{ url_for('book_rules', book_id=book.id, rule=rule.id) }}">{{ rule.id }}</a>
+      · v{{ rule.version }} · {{ "启用" if rule.enabled else "已停用" }}
+      · {{ book.accounts[rule.account_id].label if rule.account_id in book.accounts else rule.account_id }}
+      {% if rule.enabled %}
+      <details class="disclosure"><summary>停用规则</summary>
+        <form method="post">
+          <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+          <input type="hidden" name="version" value="{{ book.version }}">
+          <input type="hidden" name="rule_id" value="{{ rule.id }}">
+          <label class="check"><input type="checkbox" name="verified" value="yes" required>确认新批次不再使用此规则</label>
+          <button class="button-secondary" name="operation" value="disable">停用</button>
+        </form>
+      </details>
+      {% endif %}
+    </li>
+  {% endfor %}</ul>
+</section>
+{% endif %}
+{% if trial %}
+<section class="card">
+  <h2>试跑结果</h2>
+  <p>命中 {{ trial.matched }} 笔，能生成 {{ trial.won }} 张草稿。本次试跑不修改任何凭证。</p>
+  {% if trial.replaced %}<p class="warning">样本中会替代以下规则的结果：{{ trial.replaced|join("、") }}。</p>{% endif %}
+  {% if not token %}<p class="warning">没有命中流水，或部分命中流水不能安全生成草稿；请调整规则或样本后重新试跑。</p>{% endif %}
+  {% if trial.issues or trial.shadowed %}
+  <ul>
+    {% for item in trial.issues %}<li>第 {{ item.row_number }} 行：{% for issue in item.issues %}{{ issue.message }} {% endfor %}</li>{% endfor %}
+    {% for row in trial.shadowed %}<li>第 {{ row }} 行：由现有规则制证，本规则未生效。</li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% if trial.sample %}
+  <div class="table-wrap"><table>
+    <caption>前 {{ trial.sample|length }} 张草稿的分录</caption>
+    <thead><tr><th>流水原行</th><th>摘要</th><th>科目</th><th>辅助核算</th><th>借贷</th><th>金额（元）</th></tr></thead>
+    <tbody>{% for voucher in trial.sample %}{% for entry in voucher.entries %}
+      <tr><td>{{ voucher.sources[0].row_number }}</td><td>{{ entry.summary }}</td>
+        <td>{{ entry.assignment.subject }} · {{ ledger.subjects[entry.assignment.subject].name }}</td>
+        <td>{% for aux in entry.assignment.auxiliary %}{{ aux.category }}={{ aux.code }} {% endfor %}</td>
+        <td>{{ "借" if entry.side == "debit" else "贷" }}</td><td>{{ entry.amount_minor|money }}</td></tr>
+    {% endfor %}{% endfor %}</tbody>
+  </table></div>
+  {% endif %}
+  {% if token %}
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input type="hidden" name="preview_token" value="{{ token }}">
+    <label class="check"><input type="checkbox" name="verified" value="yes" required>我已核对命中范围、科目、辅助编码和借贷方向。</label>
+    <div class="card-actions"><button name="operation" value="publish">发布已试跑规则</button></div>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+<section class="card">
+  <h2>{{ "更新规则" if values.editing else "新增规则" }}</h2>
+  <p>限定一个银行账户和收支方向。对方户名按全称精确匹配；同时填写字段条件时，两个条件都必须命中。普通流水一笔生成一张草稿。</p>
+  {% if error %}<p class="warning" role="alert">{{ error }}</p>{% endif %}
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input type="hidden" name="version" value="{{ book.version }}">
+    {% if values.editing %}<input type="hidden" name="editing" value="{{ values.editing }}">{% endif %}
+    <div class="form-grid">
+      <label>规则标识<input name="rule_id" value="{{ values.rule_id }}" maxlength="40" required{% if values.editing %} readonly{% endif %}></label>
+      <label>银行账户<select name="account_id" required><option value="">请选择</option>
+        {% for id, account in book.accounts.items() %}<option value="{{ id }}"{% if values.account_id == id %} selected{% endif %}>{{ account.label }}（尾号 {{ account.account.number[-4:] }}）</option>{% endfor %}
+      </select></label>
+      <label>收支<select name="direction"><option value="income"{% if values.direction == "income" %} selected{% endif %}>收入</option>
+        <option value="expense"{% if values.direction == "expense" %} selected{% endif %}>支出</option></select></label>
+      <label>对方户名<input name="party" value="{{ values.party }}" maxlength="200"></label>
+      <label>银行字段<select name="field"><option value="">不限制字段</option>
+        {% for id, label in fields.items() %}<option value="{{ id }}"{% if values.field == id %} selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select></label>
+      <label>字段匹配<select name="operation_type"><option value="equals"{% if values.operation_type == "equals" %} selected{% endif %}>精确等于</option>
+        <option value="contains"{% if values.operation_type == "contains" %} selected{% endif %}>包含</option></select></label>
+      <label>字段匹配文本<input name="text" value="{{ values.text }}" maxlength="200"></label>
+      <label>对方科目<select name="subject" required><option value="">请选择</option>
+        {% for id, subject in ledger.subjects.items() %}<option value="{{ id }}"{% if values.subject == id %} selected{% endif %}>{{ id }} · {{ subject.name }}</option>{% endfor %}
+      </select></label>
+      <label>辅助核算（每行「类别=编码」）<textarea name="aux" maxlength="500" rows="2">{{ values.aux }}</textarea></label>
+      <label>凭证摘要<input name="summary" value="{{ values.summary }}" maxlength="500" required><small>可用 {counterparty} 表示对方户名，{date} 表示凭证日期。</small></label>
+      <label>试跑批次<select name="batch_id" required><option value="">选择同一账户的已保存批次</option>
+        {% for row in batches %}<option value="{{ row.id }}"{% if values.batch_id == row.id|string %} selected{% endif %}>#{{ row.id }} · {{ book.accounts[row.account_id].label }} · {{ row.period }} · {{ row.filename }}</option>{% endfor %}
+      </select></label>
+    </div>
+    {% if not batches %}<p class="warning">还没有可试跑的流水；请先上传一个已核对的小批次。</p>{% endif %}
+    <div class="card-actions"><button name="operation" value="preview">试跑规则</button>
+      {% if values.editing %}<a href="{{ url_for('book_rules', book_id=book.id) }}">返回新增</a>{% endif %}
+    </div>
+  </form>
+</section>
+{% endblock %}

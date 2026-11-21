@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{% from "components.html" import steps %}
+{% block title %}复核批次 #{{ batch.id }}{% endblock %}
+{% block breadcrumb %}流水转换 <span class="crumb-sep">/</span> 复核批次 #{{ batch.id }}{% endblock %}
+{% block content %}
+{% macro skip_form(row, undo=false) %}
+<form method="post" action="{{ url_for('skip_row', book_id=book.id, batch_id=batch.id, row=row) }}">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <input type="hidden" name="revision" value="{{ batch.revision }}">
+  {% if undo %}<button class="button-secondary" name="operation" value="undo">撤回跳过</button>
+  {% else %}
+  <label>跳过原因<select name="reason" required><option value="">请选择</option>
+    {% for value, label in skip_reasons.items() %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+  </select></label>
+  <label>核对依据（如既有凭证号）<input name="note" required maxlength="500"></label>
+  <button class="button-secondary">确认跳过第 {{ row }} 行</button>
+  {% endif %}
+</form>
+{% endmacro %}
+{{ steps(2, "#export") }}
+<section class="hero review-hero">
+  <p class="eyebrow">凭证处理 · 第 2 步</p>
+  <h1>复核批次 #{{ batch.id }}</h1>
+  <p>{{ book.label }} <span class="meta-dot">·</span> {{ batch.period }} <span class="meta-dot">·</span>
+    {{ book.accounts[batch.account_id].label if batch.account_id in book.accounts else batch.account_id }}</p>
+  <div class="hero-tags">
+    <span>{{ icon("ledger", 15) }} {{ batch.filename }}</span>
+    <span>工作表「{{ batch.sheet }}」 · 第 {{ batch.header_row }} 行表头</span>
+    <span>{{ summary.profile_name or summary.profile }} v{{ summary.profile_version }}</span>
+    {% if book.managed %}<span>账套配置 v{{ ledger.version }}</span>{% endif %}
+    {% if summary.date_range %}<span>交易日期 {{ summary.date_range[0] }} 至 {{ summary.date_range[1] }}</span>{% endif %}
+  </div>
+  {% if batch.origin_batch_id %}
+  <p>单条流水重算 · 来源：
+    <a href="{{ url_for('batch_page', book_id=book.id, batch_id=batch.origin_batch_id, exception_row=batch.origin_row_number,
+                       _anchor='exception-' ~ batch.origin_row_number) }}">批次 #{{ batch.origin_batch_id }} 第 {{ batch.origin_row_number }} 行</a>
+  </p>
+  {% endif %}
+  {% if book.managed %}
+  <p><a href="{{ url_for('book_rules', book_id=book.id, account_id=batch.account_id, batch_id=batch.id) }}">用本批流水试跑规则（不修改本批）</a></p>
+  {% endif %}
+</section>
+<section class="funds" aria-label="银行收支汇总">
+{% for iso, sides in summary.totals_by_currency.items() %}
+{% for side, label in [("income","收入合计"), ("expense","支出合计")] %}
+<div class="fund-card fund-{{ side }}">
+  <div class="fund-label"><span class="fund-marker"></span>{{ label }} <span class="currency">{{ iso }}</span></div>
+  <strong>{{ (sides[side].amount_minor if side in sides else 0)|money }}</strong>
+  <span class="fund-count">{{ sides[side].count if side in sides else 0 }} 笔流水</span>
+</div>
+{% endfor %}
+{% endfor %}
+</section>
+{% if summary.amounts_incomplete %}<p class="warning">部分流水无法解析，金额汇总不完整。</p>{% endif %}
+{% for warning in summary.warnings %}<p class="source-warning">{{ warning.message }}</p>{% endfor %}
+<div class="review-layout">
+<div class="review-main">
+<div class="section-heading">
+  <div><h2>凭证复核</h2><p>{{ summary.rows }} 笔流水 · {{ total }} 张凭证 · {{ pending }} 张待复核 · {{ ready }} 张已复核待导出</p></div>
+</div>
+<div class="review-tools">
+{% if exclusions %}
+<details class="card disclosure exception-card"{% if exception_row is not none %} open{% endif %}><summary>异常及跳过 <span class="pill pill-pending">{{ exclusions|length }} 笔</span></summary>
+{% set transferred = exclusions|selectattr("recalculated_batch_id")|list|length %}
+<p class="muted">{{ skipped|length }} 笔已跳过 · {{ exclusions|length - skipped|length - transferred }} 笔异常或重复{% if transferred %} · {{ transferred }} 笔已转重算{% endif %}</p>
+<ul class="exception-list">{% for item in exclusions %}
+<li id="exception-{{ item.row_number }}"><strong>原流水第 {{ item.row_number }} 行</strong><p>{% for issue in item.issues %}{{ issue.message }}{% endfor %}</p>
+{% if item.skipped %}{{ skip_form(item.row_number, true) }}
+{% elif item.recalculated_batch_id %}
+<a href="{{ url_for('batch_page', book_id=book.id, batch_id=item.recalculated_batch_id) }}">打开重算批次</a>
+{% else %}
+{% if item.row_number in manual_rows %}<a href="{{ url_for('manual_draft', book_id=book.id, batch_id=batch.id, row=item.row_number) }}">手工制证</a>{% endif %}
+<details><summary>核实后跳过</summary>{{ skip_form(item.row_number) }}</details>{% endif %}
+</li>
+{% endfor %}</ul>
+</details>
+{% endif %}
+<details class="card disclosure merge-tools"><summary>合并同日凭证</summary>
+<form class="fields" method="post" action="{{ url_for('regroup', book_id=book.id, batch_id=batch.id) }}">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <input type="hidden" name="revision" value="{{ batch.revision }}">
+  <label>待合并凭证的页面编号（逗号分隔，如 3, 5）<input name="ids" required></label>
+  <button class="button-secondary" name="operation" value="merge">合并并退回待复核</button>
+</form></details>
+</div>
+<form class="card fields filter-bar" method="get">
+  <label class="filter-search">搜索对方、摘要或流水号<input name="q" value="{{ query }}" type="search" placeholder="输入关键词"></label>
+  <label>凭证日期<input name="date" type="date" value="{{ day }}"></label>
+  <label>状态<select name="status">
+    {% for value, label in [("", "全部"), ("pending", "待复核"), ("reviewed", "已复核"), ("skipped", "已跳过"), ("exported", "已导出")] %}
+    <option value="{{ value }}"{% if status == value %} selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select></label>
+  <button type="submit" class="button-secondary">筛选</button>
+  {% if query or status or day %}<a class="reset-link" href="{{ url_for('batch_page', book_id=book.id, batch_id=batch.id) }}">清除</a>{% endif %}
+</form>
+<div class="voucher-list">
+{% for draft, tag, issues in drafts %}
+<article class="card voucher-card" id="draft-{{ draft.id }}">
+  <div class="voucher-heading">
+    <span class="icon-tile">{{ icon("ledger", 18) }}</span>
+    <div><h3>凭证 #{{ draft.id }}</h3><p>{{ draft.voucher.sources[0].transaction.voucher_date }} · {{ draft.voucher.entries|length }} 条分录</p></div>
+    <span class="pill pill-{{ tag }}">{{ {"pending":"待复核", "reviewed":"已复核", "skipped":"已跳过", "exported":"已导出"}[tag] }}</span>
+  </div>
+  {% if draft.original_export_id is not none %}<p>修订重导：<a href="{{ url_for('export_page', book_id=book.id, export_id=draft.original_export_id) }}">原导出 #{{ draft.original_export_id }}</a> · 原凭证号 {{ draft.original_number }}</p>{% endif %}
+  {% if draft.voucher.rule_versions %}<p class="voucher-rule">命中规则：{% for id, version in draft.voucher.rule_versions %}<code>{{ id }} v{{ version }}</code> {% endfor %}</p>
+  {% else %}<p class="voucher-rule">手工制证</p>{% endif %}
+  <details class="disclosure source-details"><summary>来源流水（{{ draft.voucher.sources|length }} 笔）</summary>
+    <ul>{% for source in draft.voucher.sources %}
+      {% set tx = source.transaction %}
+      <li>「{{ source.sheet }}」第 {{ source.row_number }} 行 · {{ tx.transaction_date }} {{ tx.transaction_time or "" }}
+      · {{ tx.counterparty_name or "无对方户名" }} · {{ "收入" if tx.direction == "income" else "支出" }} {{ tx.amount_minor|money }}
+      · 流水号 {{ tx.bank_reference or "无" }}{% if tx.summary %} · 摘要：{{ tx.summary }}{% endif %}
+      {% if tx.purpose %} · 用途：{{ tx.purpose }}{% endif %}{% if tx.remark %} · 备注：{{ tx.remark }}{% endif %}</li>
+    {% endfor %}</ul>
+  </details>
+  <div class="table-wrap voucher-table"><table aria-label="凭证 #{{ draft.id }} 分录">
+    <thead><tr><th scope="col">分录</th><th scope="col">摘要</th><th scope="col">科目</th><th scope="col">辅助核算</th><th class="amount" scope="col">借方</th><th class="amount" scope="col">贷方</th></tr></thead>
+    <tbody>{% for entry in draft.voucher.entries %}
+      {% set subject = ledger.subjects.get(entry.assignment.subject) %}
+      <tr><td class="muted">{{ loop.index }}</td><td>{{ entry.summary }}</td><td><code>{{ entry.assignment.subject }}</code> {% if subject %}<span class="subject-name">{{ subject.name }}</span>{% endif %}</td>
+      <td>{% for aux in entry.assignment.auxiliary %}{{ aux.category }}={{ aux.code }}{% if not loop.last %}、{% endif %}{% endfor %}</td>
+      <td class="amount">{{ entry.amount_minor|money if entry.side == "debit" else "" }}</td>
+      <td class="amount">{{ entry.amount_minor|money if entry.side == "credit" else "" }}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% if issues %}<ul class="warning">{% for issue in issues %}<li>{{ issue.message }}</li>{% endfor %}</ul>{% else %}<p class="balance-check">{{ icon("check", 16) }} <span>借贷差额：0.00 · 来源金额已核对</span></p>{% endif %}
+  {% if draft.export_id is not none %}
+    <a href="{{ url_for('export_page', book_id=book.id, export_id=draft.export_id) }}">查看导出记录</a>
+  {% elif tag != "skipped" %}
+    <div class="voucher-tools">
+    {% if draft.original_export_id is none %}
+      {% if draft.voucher.sources|length == 1 %}
+      <details class="disclosure"><summary>核实后跳过该笔流水</summary>{{ skip_form(draft.voucher.sources[0].row_number) }}</details>
+      {% else %}
+      <form method="post" action="{{ url_for('regroup', book_id=book.id, batch_id=batch.id) }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <input type="hidden" name="revision" value="{{ batch.revision }}">
+        <input type="hidden" name="ids" value="{{ draft.id }}">
+        <button class="button-secondary" name="operation" value="split">按来源流水拆分</button>
+      </form>
+      {% endif %}
+    {% elif tag == "reviewed" and book.can_export and ledger.finance_verified %}
+    <form class="fields retry-export" method="post" action="{{ url_for('export_batch', book_id=book.id, batch_id=batch.id) }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <input type="hidden" name="request_id" value="{{ retry_requests[draft.id] }}">
+      <input type="hidden" name="revision" value="{{ batch.revision }}">
+      <input type="hidden" name="retry_draft_id" value="{{ draft.id }}">
+      <label>新凭证号<input name="first_number" inputmode="numeric" required></label>
+      <label>精斗云既用号<input name="used"></label>
+      <button>只导出这张修订凭证</button>
+    </form>
+    {% endif %}
+    <details class="disclosure"><summary>修改分录摘要、科目或辅助核算</summary>
+    <form method="post" action="{{ url_for('change_draft', book_id=book.id, batch_id=batch.id, draft_id=draft.id) }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <input type="hidden" name="token" value="{{ draft.token }}">
+      <input type="hidden" name="operation" value="edit">
+      <label>分录序号<select name="line" required>
+      {% for entry in draft.voucher.entries %}<option value="{{ loop.index }}">{{ loop.index }} · {{ entry.assignment.subject }} · {{ entry.summary|truncate(40) }}</option>{% endfor %}
+      </select></label>
+      <label>新摘要<input name="summary" required maxlength="500"></label>
+      <label>科目编码<input name="subject" required maxlength="80"></label>
+      <label>辅助核算（每行「类别=编码」，无则留空）<textarea name="aux" rows="2" maxlength="500"></textarea></label>
+      <button class="button-secondary">保存修改并退回待复核</button>
+    </form></details>
+    {% if not issues and tag == "pending" %}
+    <form class="card-actions" method="post" action="{{ url_for('change_draft', book_id=book.id, batch_id=batch.id, draft_id=draft.id) }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <input type="hidden" name="token" value="{{ draft.token }}">
+      <button name="operation" value="confirm">确认这张凭证</button>
+    </form>
+    {% endif %}
+    </div>
+  {% endif %}
+</article>
+{% else %}<div class="card empty-state">没有符合条件的凭证。</div>{% endfor %}
+</div>
+{% if page > 1 or has_next %}<p class="pagination">第 {{ page }} 页
+  {% if page > 1 %}<a class="button button-secondary" href="{{ url_for('batch_page', book_id=book.id, batch_id=batch.id, page=page-1, q=query, status=status, date=day) }}">上一页</a>{% endif %}
+  {% if has_next %}<a class="button button-secondary" href="{{ url_for('batch_page', book_id=book.id, batch_id=batch.id, page=page+1, q=query, status=status, date=day) }}">下一页</a>{% endif %}
+</p>{% endif %}
+</div>
+<aside class="card export-panel" id="export" aria-labelledby="export-heading">
+  <div class="panel-heading"><span class="icon-tile">{{ icon("download", 20) }}</span>
+    <div><p class="field-caption">第 3 步</p><h2 id="export-heading">导出 Excel</h2></div>
+  </div>
+  <div class="export-count"><strong>{{ ready }}</strong><span>张已复核待导出</span></div>
+  <p class="muted">{{ ready_entries }} 条分录 · 凭证字「{{ book.word }}」</p>
+  <p class="hint">导出范围不受左侧筛选影响。</p>
+  {% if exports %}<ul>{% for item in exports %}<li><a href="{{ url_for('export_page', book_id=book.id, export_id=item.id) }}">导出 #{{ item.id }}</a> · {{ item.created_at }}（UTC）</li>{% endfor %}</ul>{% endif %}
+  {% if not book.can_export or not ledger.finance_verified %}
+  <p class="warning">当前账套或本批主数据与模板尚未完成核验，不能生成实际导入文件。</p>
+  {% elif ready %}
+  <form method="post" action="{{ url_for('export_batch', book_id=book.id, batch_id=batch.id) }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input type="hidden" name="revision" value="{{ batch.revision }}">
+    <input type="hidden" name="request_id" value="{{ request_id }}">
+    <div class="form-grid">
+      <label>起始凭证号<input name="first_number" inputmode="numeric" required></label>
+      <label>精斗云既用号（逗号或空格分隔）<input name="used"></label>
+    </div>
+    {% if excluded_rows %}
+    <details class="disclosure"><summary>查看排除的 {{ excluded_rows|length }} 笔流水</summary><p class="wrap-anywhere">原流水第 {{ excluded_rows|join("、") }} 行</p></details>
+    <label class="check"><input type="checkbox" name="partial" value="yes" required>我已核对排除范围，只导出已复核的凭证</label>
+    {% endif %}
+    <button>生成并保存 Excel</button>
+  </form>
+  {% else %}<p>没有尚未导出的已复核凭证。</p>{% endif %}
+</aside>
+</div>
+{% endblock %}

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}配置流水格式 · 凭证工作台{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('configuration') }}">配置</a> / 流水格式{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <p class="eyebrow">银行账户</p><h1>配置流水格式</h1>
+  <p>{{ book.label }} · {{ account.label }}（尾号 {{ account.account.number[-4:] }}）· 账套配置 v{{ book.version }}</p>
+</div>
+{% if preview %}
+<section class="card">
+  <h2>样本预览</h2>
+  <p>工作表「{{ statement.sheet }}」 · 第 {{ statement.header_row }} 行表头 · {{ statement.period }} · 共 {{ statement.rows|length }} 笔</p>
+  <p>收入 {{ preview.income_count }} 笔，{{ preview.income_total|money }} 元；支出 {{ preview.expense_count }} 笔，{{ preview.expense_total|money }} 元；异常 {{ preview.error_count }} 笔。</p>
+  {% for warning in statement.warnings %}<p>{{ warning.message }}</p>{% endfor %}
+  {% if preview.errors %}
+  <p class="warning">样本有异常，暂不能发布。以下显示前 {{ preview.errors|length }} 笔异常：</p>
+  <ul>{% for row, issue in preview.errors %}<li>第 {{ row }} 行：{{ issue.message }}</li>{% endfor %}</ul>
+  {% elif not preview.rows %}<p class="warning">样本没有可核对的交易，暂不能发布。</p>{% endif %}
+  {% if preview.rows %}
+  <div class="table-wrap"><table>
+    <caption>前 {{ preview.rows|length }} 笔可解析交易</caption>
+    <thead><tr><th>原行</th><th>凭证日期</th><th>流水号</th><th>对方</th><th>摘要</th><th>收支</th><th>金额（元）</th></tr></thead>
+    <tbody>
+    {% for row in preview.rows %}{% set tx = row.transaction %}
+    <tr><td>{{ row.row_number }}</td><td>{{ tx.voucher_date }}</td><td>{{ tx.bank_reference }}</td><td>{{ tx.counterparty_name or "—" }}</td><td>{{ tx.summary or "—" }}</td><td>{{ "收入" if tx.direction == "income" else "支出" }}</td><td>{{ tx.amount_minor|money }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% endif %}
+  {% if token %}
+  <form method="post" action="{{ url_for('bank_format', book_id=book.id, account_id=account.account.account_id) }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input type="hidden" name="preview_token" value="{{ token }}">
+    <label class="check"><input type="checkbox" name="verified" value="yes" required>我已核对样本的本方账户、日期、收支方向、笔数和金额。</label>
+    <div class="card-actions"><button name="operation" value="publish">发布此预览对应的格式</button></div>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+<section class="card">
+  <h2>填写列映射</h2>
+  <p>将样本中的原表头填到对应字段。支持 .xls 和 .xlsx，须有本方完整账号、流水号及日期。先预览，再发布；样本不会记入历史批次。</p>
+  {% if error %}<p class="warning" role="alert">{{ error }}</p>{% endif %}
+  <form method="post" enctype="multipart/form-data" action="{{ url_for('bank_format', book_id=book.id, account_id=account.account.account_id) }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input type="hidden" name="version" value="{{ book.version }}">
+    <div class="form-grid">
+      <label>流水格式名称<input name="name" maxlength="80" value="{{ values.name }}" required></label>
+      <label>收支表示方式<select name="amount_mode">
+        <option value="signed"{% if values.amount_mode == "signed" %} selected{% endif %}>一列金额（正收负支）</option>
+        <option value="split"{% if values.amount_mode == "split" %} selected{% endif %}>收入、支出两列</option>
+      </select></label>
+      <label>工作表名称（留空自动识别）<input name="sheet_name" maxlength="31" value="{{ values.sheet_name }}"></label>
+      <label>表头行号（留空扫描前 40 行）<input type="number" name="header_row" min="1" max="1000" value="{{ values.header_row }}"></label>
+    </div>
+    <div class="form-grid">
+      {% for field, label in columns.items() %}
+      <label>{{ label }}的原表头<input name="{{ field }}" maxlength="100" value="{{ values[field] }}"{% if field in ("own_account", "reference", "transaction_date") %} required{% endif %}></label>
+      {% endfor %}
+    </div>
+    <label class="check"><input type="checkbox" name="cny_only" value="yes"{% if values.cny_only == "yes" %} checked{% endif %}>文件没有币种列，且此格式仅包含人民币</label>
+    <label class="check"><input type="checkbox" name="allow_serial_dates" value="yes"{% if values.allow_serial_dates == "yes" %} checked{% endif %}>允许日期按 Excel 序列号读取</label>
+    <div class="form-grid">
+      <label>样本会计期间<input type="month" name="period" value="{{ values.period }}" required></label>
+      <label>银行流水样本<input type="file" name="sample" accept=".xls,.xlsx" required></label>
+    </div>
+    <div class="card-actions"><button name="operation" value="preview">预览样本</button></div>
+  </form>
+</section>
+{% endblock %}

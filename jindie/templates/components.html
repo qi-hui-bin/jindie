@@ -1,0 +1,41 @@
+{% macro icon(name, size=20) -%}
+<svg width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  {%- if name == "ledger" -%}
+  <rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 3v18m3-13h4m-4 4h4m-4 4h3"/>
+  {%- elif name == "history" -%}
+  <path d="M3 12a9 9 0 1 1 2.6 6.4M3 8v4h4m5-4v4l3 2"/>
+  {%- elif name == "pending" -%}
+  <path d="M8 5H5v15h14V5h-3M9 3h6v4H9zM8 11h8m-8 4h6"/>
+  {%- elif name == "settings" -%}
+  <path d="M4 7h5m4 0h7M4 12h10m4 0h2M4 17h2m4 0h10"/><circle cx="11" cy="7" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="8" cy="17" r="2"/>
+  {%- elif name == "shield" -%}
+  <path d="m12 22 1.5-.8C17 19.4 20 16.6 20 12V6l-8-4-8 4v6c0 4.6 3 7.4 6.5 9.2L12 22Z"/><path d="m9 12 2 2 4-4"/>
+  {%- elif name == "check" -%}
+  <path d="m5 12 4 4L19 6"/>
+  {%- elif name == "arrow" -%}
+  <path d="M4 12h15m-6-6 6 6-6 6"/>
+  {%- elif name == "download" -%}
+  <path d="M12 3v12m-4-4 4 4 4-4M5 16v4h14v-4"/>
+  {%- elif name == "upload" -%}
+  <path d="M12 16V4m-4 4 4-4 4 4M5 16v4h14v-4"/>
+  {%- elif name == "bank" -%}
+  <path d="m3 9 9-5 9 5H3Zm2 10h14M7 12v4m5-4v4m5-4v4"/>
+  {%- endif -%}
+</svg>
+{%- endmacro %}
+
+{% macro steps(current, export_target=none) -%}
+<nav aria-label="凭证处理进度">
+  <ol class="steps">
+    {% for label in ("上传流水", "复核凭证", "导出 Excel") %}
+    {% set state = "current" if loop.index == current else "done" if loop.index < current else "upcoming" %}
+    <li class="step step-{{ state }}"{% if state == "current" %} aria-current="step"{% endif %}>
+      {% if loop.index == 3 and export_target %}<a href="{{ export_target }}">{% endif %}
+      <span class="step-index">{% if state == "done" %}{{ icon("check", 14) }}{% else %}{{ loop.index }}{% endif %}</span>
+      <span>{{ label }}</span>
+      {% if loop.index == 3 and export_target %}</a>{% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+</nav>
+{%- endmacro %}

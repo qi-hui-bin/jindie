@@ -1,0 +1,38 @@
+{% from "components.html" import icon -%}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}银行流水转精斗云{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+<a class="skip-link" href="#main">跳到主要内容</a>
+{% set endpoint = request.endpoint %}
+{% set nav_current = "history" if endpoint in ("history", "export_page") else endpoint if endpoint in ("configuration", "pending_accounting") else "home" %}
+<header class="sidebar">
+  <a class="brand" href="{{ url_for('home') }}">
+    <span class="brand-mark">{{ icon("ledger", 23) }}</span>
+    <span><strong>凭证工作台</strong><small>银行流水转精斗云</small></span>
+  </a>
+  <nav class="side-nav" aria-label="主导航">
+    <p class="sidebar-label">工作区</p>
+    {% for target, label, glyph in [("home", "流水转换", "ledger"), ("pending_accounting", "待确认清单", "pending"), ("history", "历史批次", "history"), ("configuration", "配置", "settings")] %}
+    <a href="{{ url_for(target) }}"{% if target == nav_current %} aria-current="page"{% endif %}>{{ icon(glyph, 18) }}<span>{{ label }}</span></a>
+    {% endfor %}
+  </nav>
+  <div class="sidebar-footer">{{ icon("shield", 18) }}<span><strong>本地工作区</strong><small>数据保存在这台电脑</small></span></div>
+</header>
+<div class="workspace">
+<div class="workspace-bar">
+  <span>{% block breadcrumb %}财务工作台{% endblock %}</span>
+  <span class="local-badge"><i></i>本机运行</span>
+</div>
+<main id="main" tabindex="-1" class="workspace-main">
+{% for message in get_flashed_messages() %}<p class="notice flash" role="status">{{ icon("check", 18) }} {{ message }}</p>{% endfor %}
+{% block content %}{% endblock %}
+</main>
+</div>
+</body>
+</html>

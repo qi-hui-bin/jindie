@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}手工制证 · 第 {{ source.row_number }} 行{% endblock %}
+{% block breadcrumb %}流水转换 <span class="crumb-sep">/</span> 手工制证{% endblock %}
+{% block content %}
+{% set tx = source.transaction %}
+<a class="back-link" href="{{ url_for('batch_page', book_id=book.id, batch_id=batch_id) }}">← 返回复核批次 #{{ batch_id }}</a>
+<div class="page-heading"><p class="eyebrow">异常处理</p><h1>手工制证</h1><p>核对源行、填写分录，生成一张待复核草稿。</p></div>
+<div class="manual-layout">
+<section class="card">
+  <h2>「{{ source.sheet }}」第 {{ source.row_number }} 行</h2>
+  <p>{{ book.label }} · {{ source.period }} · 凭证日期 {{ tx.voucher_date }} · 流水号 {{ tx.bank_reference }}</p>
+  <p>{{ tx.counterparty_name or "无对方户名" }} · {{ "收入" if tx.direction == "income" else "支出" }} <strong>{{ tx.amount_minor|money }}</strong> 元</p>
+  {% if tx.summary %}<p>原摘要：{{ tx.summary }}</p>{% endif %}
+  {% if tx.purpose %}<p>用途：{{ tx.purpose }}</p>{% endif %}
+  {% if tx.remark %}<p>备注：{{ tx.remark }}</p>{% endif %}
+  <ul class="warning">{% for issue in exclusion.issues %}<li>{{ issue.message }}</li>{% endfor %}</ul>
+</section>
+<section class="card">
+  <h2>填写凭证</h2>
+  <p>银行分录按来源流水生成：{{ "借记" if tx.direction == "income" else "贷记" }} {{ bank_subject.code }} {{ bank_subject.name }}。
+  草稿仅用于当批，不会保存为匹配规则。</p>
+  {% if error %}<p class="warning" role="alert">{{ error }}</p>{% endif %}
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input type="hidden" name="revision" value="{{ revision }}">
+    <label>凭证摘要<input name="summary" required maxlength="500" value="{{ submitted.get('summary', tx.summary or tx.purpose or tx.remark or '') }}"></label>
+    <label>对方科目<select name="subject" required>
+      <option value="">请选择</option>
+      {% for subject in subjects %}
+      <option value="{{ subject.code }}"{% if submitted.get('subject') == subject.code %} selected{% endif %}>{{ subject.code }} {{ subject.name }}{% if subject.required_aux %}（必填：{{ subject.required_aux|join("、") }}）{% endif %}</option>
+      {% endfor %}
+    </select></label>
+    <label>辅助核算（每行「类别=编码」，如 项目=029）<textarea name="aux" rows="2" maxlength="500">{{ submitted.get('aux', '') }}</textarea></label>
+    <label>制证依据<input name="reason" required maxlength="500" value="{{ submitted.get('reason', '') }}"></label>
+    <div class="card-actions"><button>生成待复核草稿 {{ icon("arrow", 18) }}</button></div>
+  </form>
+</section>
+</div>
+{% endblock %}

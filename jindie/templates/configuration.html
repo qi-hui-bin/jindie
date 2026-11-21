@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}当前配置 · 凭证工作台{% endblock %}
+{% block breadcrumb %}配置{% endblock %}
+{% block content %}
+<div class="page-heading"><p class="eyebrow">本地账套</p><h1>当前配置</h1><p>不显示完整账号。既有复核批次保留原主数据和规则。</p></div>
+{% if allow_setup %}
+<p><a class="button" href="{{ url_for('new_book') }}">新增账套</a></p>
+{% endif %}
+<div class="stack">
+{% for book in books %}
+<section class="card">
+  <div class="panel-heading"><span class="icon-tile">{{ icon("bank") }}</span><h2>{{ book.label }}</h2></div>
+  <dl class="details-grid">
+    <div><dt>账套</dt><dd>{{ book.id }}</dd></div><div><dt>主数据版本</dt><dd>{{ book.config.ledger.version }}</dd></div>
+    <div><dt>凭证字</dt><dd>{{ book.word }}</dd></div><div><dt>币别</dt><dd>{{ book.currency_code }}</dd></div>
+  </dl>
+  <p>正式导出 <span class="pill {{ 'pill-reviewed' if book.can_export else 'pill-pending' }}">{{ "已配置核验信息" if book.can_export else "未开启，需核验主数据与模板" }}</span></p>
+  <p>{{ "页面建立 · 保存在本地数据库" if book.managed else "本地 JSON · 页面只读" }}</p>
+  <ul>{% for item in book.accounts.values() %}
+    <li>{{ item.label }}（尾号 {{ item.account.number[-4:] }}）
+      {% if book.managed %}
+        · {{ item.profiles[0].name if item.profiles|length == 1 else "自动识别内置格式" }}
+        · <a href="{{ url_for('bank_format', book_id=book.id, account_id=item.account.account_id) }}">配置流水格式</a>
+      {% endif %}
+    </li>
+  {% endfor %}</ul>
+  {% if book.managed %}
+    <a class="button button-secondary" href="{{ url_for('edit_book', book_id=book.id) }}">更新账套配置</a>
+    <a class="button button-secondary" href="{{ url_for('book_rules', book_id=book.id) }}">自动制证规则</a>
+  {% endif %}
+</section>
+{% else %}
+<p>还没有可用账套。</p>
+{% endfor %}
+</div>
+{% endblock %}

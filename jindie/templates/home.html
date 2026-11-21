@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% from "components.html" import steps %}
+{% block title %}上传银行流水 · 凭证工作台{% endblock %}
+{% block breadcrumb %}流水转换 <span class="crumb-sep">/</span> 上传流水{% endblock %}
+{% block content %}
+{{ steps(1) }}
+<section class="hero">
+  <p class="eyebrow">凭证处理 · 第 1 步</p>
+  <h1>上传银行流水</h1>
+  <p>选择账套、银行账户和会计期间。解析完成后，即可核对系统生成的凭证草稿。</p>
+</section>
+<div class="upload-layout">
+<div class="stack">
+{% for book in books %}
+<section class="card upload-card">
+  <div class="panel-heading"><span class="icon-tile">{{ icon("bank") }}</span><div><p class="field-caption">账套</p><h2>{{ book.label }}</h2></div></div>
+  <form method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input type="hidden" name="book" value="{{ book.id }}">
+    <div class="form-grid">
+      <label>银行账户<select name="account" required>
+        {% for id, item in book.accounts.items() %}
+        <option value="{{ id }}">{{ item.label }}（尾号 {{ item.account.number[-4:] }}）</option>
+        {% endfor %}
+      </select></label>
+      <label>会计期间<input name="period" type="month" value="{{ current_period }}" required></label>
+    </div>
+    <div class="upload-area">
+      <span class="icon-tile">{{ icon("upload", 22) }}</span>
+      <label>流水文件<input name="statement" type="file" accept=".xls,.xlsx" aria-describedby="upload-help-{{ loop.index }}" required></label>
+      <small id="upload-help-{{ loop.index }}">支持 .xls、.xlsx，单个文件不超过 20 MB</small>
+    </div>
+    <details class="disclosure"><summary>工作表和账号选项</summary>
+      <label>工作表名称（留空自动识别）<input name="sheet" maxlength="31"></label>
+      <label class="check"><input type="checkbox" name="binding" value="yes">原文件账号缺失或遮蔽时，我已核实并确认绑定此账户</label>
+    </details>
+    <div class="card-actions"><button>解析并进入复核 {{ icon("arrow", 18) }}</button></div>
+  </form>
+</section>
+{% else %}
+  {% if allow_setup %}
+    <section class="card"><h2>还没有配置账套</h2><p>先导入科目、辅助核算和银行账户，再上传流水。</p>
+      <a class="button" href="{{ url_for('new_book') }}">新增账套</a>
+    </section>
+  {% endif %}
+{% endfor %}
+</div>
+<aside class="card help-card">
+  <p class="eyebrow">上传前检查</p>
+  <h2>先核对三项</h2>
+  <ol class="checklist">
+    <li><strong>银行账户</strong><small>确认账套和账号尾号与原流水一致。</small></li>
+    <li><strong>会计期间</strong><small>选择这批凭证应计入的期间。</small></li>
+    <li><strong>文件格式</strong><small>内置中行、建行和兴业的已支持格式，不按账号尾号识别。</small></li>
+  </ol>
+</aside>
+</div>
+{% endblock %}
